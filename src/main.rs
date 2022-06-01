@@ -15,6 +15,7 @@ mod app {
     use rp_pico::hal;
 
     type LedPin = hal::gpio::Pin<hal::gpio::pin::bank0::Gpio25, hal::gpio::PushPullOutput>;
+    type SwitchPin = hal::gpio::Pin<hal::gpio::bank0::Gpio1, hal::gpio::PullUpInput>;
 
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
     type Monotonic = Rp2040Monotonic;
@@ -25,6 +26,7 @@ mod app {
     #[local]
     struct Local {
         led: LedPin,
+        switch: SwitchPin,
     }
 
     #[init]
@@ -39,20 +41,26 @@ mod app {
         );
 
         let mut led = pins.led.into_push_pull_output();
-        led.set_low().unwrap();
 
-        toggle_led::spawn().ok();
+        let switch = pins.gpio1.into_mode();
+        switch.set_interrupt_enabled(hal::gpio::Interrupt::EdgeLow, true);
+
+        led.set_low().unwrap();
 
         (
             Shared {},
-            Local { led },
+            Local { led, switch },
             init::Monotonics(Rp2040Monotonic::new(context.device.TIMER)),
         )
     }
 
-    #[task(priority = 1, local = [led])]
-    fn toggle_led(cx: toggle_led::Context) {
-        toggle_led::spawn_after(1000.millis()).ok();
-        cx.local.led.toggle().ok();
+    #[task(binds = IO_IRQ_BANK0, priority = 2, local = [led, switch])]
+    fn on_gpio(context: on_gpio::Context) {
+        let switch = context.local.switch;
+        if switch.interrupt_status(hal::gpio::Interrupt::EdgeLow) {
+            context.local.led.toggle().ok();
+
+            switch.clear_interrupt(hal::gpio::Interrupt::EdgeLow);
+        }
     }
 }
