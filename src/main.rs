@@ -8,12 +8,10 @@ use rtic::app;
 
 #[app(device = rp_pico::hal::pac, peripherals = true, dispatchers = [XIP_IRQ])]
 mod app {
-    use embedded_hal::adc::Channel;
+
     use embedded_hal::adc::OneShot;
     use embedded_hal::digital::v2::OutputPin;
-    use embedded_hal::digital::v2::ToggleableOutputPin;
 
-    use rp2040_hal::adc::TempSense;
     use rp2040_hal::gpio::bank0::Gpio26;
     use rp2040_monotonic::*;
     use rp_pico::hal;
@@ -53,8 +51,8 @@ mod app {
         let switch = pins.gpio1.into_mode();
         switch.set_interrupt_enabled(hal::gpio::Interrupt::EdgeLow, true);
 
-        let mut adc = hal::Adc::new(context.device.ADC, &mut context.device.RESETS);
-        let mut sensor = pins.gpio26.into_floating_input();
+        let adc = hal::Adc::new(context.device.ADC, &mut resets);
+        let sensor = pins.gpio26.into_floating_input();
 
         led.set_low().unwrap();
 
@@ -69,23 +67,21 @@ mod app {
             init::Monotonics(Rp2040Monotonic::new(context.device.TIMER)),
         )
     }
-    /*
-    #[task(binds = IO_IRQ_BANK0, priority = 2, local = [led, switch])]
-    fn on_gpio(context: on_gpio::Context) {
-        let switch = context.local.switch;
-        if switch.interrupt_status(hal::gpio::Interrupt::EdgeLow) {
-            context.local.led.toggle().ok();
-
-            switch.clear_interrupt(hal::gpio::Interrupt::EdgeLow);
-        }
-    }
-     */
 
     #[task(priority = 1, local = [led, switch, adc, sensor ])]
     fn toggle_led(context: toggle_led::Context) {
-        //if let Ok(a) = context.local.temperature_sensor.read() {}
+        let led = context.local.led;
+        let adc = context.local.adc;
+        let sensor = context.local.sensor;
+
+        if let Ok::<u16, _>(value) = adc.read(sensor) {
+            if value > 200 {
+                led.set_high().ok();
+            } else {
+                led.set_low().ok();
+            }
+        };
 
         toggle_led::spawn_after(1000.millis()).ok();
-        context.local.led.toggle().ok();
     }
 }
