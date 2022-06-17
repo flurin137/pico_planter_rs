@@ -11,15 +11,17 @@ mod app {
 
     use embedded_hal::adc::OneShot;
     use embedded_hal::digital::v2::OutputPin;
+    use embedded_hal::digital::v2::ToggleableOutputPin;
 
-    use rp2040_hal::gpio::bank0::Gpio26;
+    use hal::gpio::*;
+    use rp2040_hal::gpio::bank0::*;
     use rp2040_monotonic::*;
     use rp_pico::hal;
 
-    type LedPin = hal::gpio::Pin<hal::gpio::pin::bank0::Gpio25, hal::gpio::PushPullOutput>;
-    type SwitchPin = hal::gpio::Pin<hal::gpio::bank0::Gpio1, hal::gpio::PullUpInput>;
-
-    type AnalogPin = hal::gpio::Pin<Gpio26, hal::gpio::Input<hal::gpio::Floating>>;
+    type LedPin = Pin<Gpio25, PushPullOutput>;
+    //type MotorPin = Pin<Gpio19, PushPullOutput>;
+    type SwitchPin = Pin<Gpio1, PullUpInput>;
+    type AnalogPin = Pin<Gpio26, Input<Floating>>;
 
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
     type Monotonic = Rp2040Monotonic;
@@ -47,6 +49,7 @@ mod app {
         );
 
         let mut led = pins.led.into_push_pull_output();
+        //let mut motor = pins.gpio19.into_push_pull_output();
 
         let switch = pins.gpio1.into_mode();
         switch.set_interrupt_enabled(hal::gpio::Interrupt::EdgeLow, true);
@@ -54,7 +57,9 @@ mod app {
         let adc = hal::Adc::new(context.device.ADC, &mut resets);
         let sensor = pins.gpio26.into_floating_input();
 
-        led.set_low().unwrap();
+        led.set_high().ok();
+
+        toggle_motor::spawn().ok();
 
         (
             Shared {},
@@ -69,7 +74,9 @@ mod app {
     }
 
     #[task(priority = 1, local = [led, switch, adc, sensor ])]
-    fn toggle_led(context: toggle_led::Context) {
+    fn toggle_motor(context: toggle_motor::Context) {
+        toggle_motor::spawn_after(200.millis()).ok();
+
         let led = context.local.led;
         let adc = context.local.adc;
         let sensor = context.local.sensor;
@@ -78,10 +85,10 @@ mod app {
             if value > 200 {
                 led.set_high().ok();
             } else {
-                led.set_low().ok();
+                led.toggle().ok();
             }
         };
 
-        toggle_led::spawn_after(1000.millis()).ok();
+        led.toggle().ok();
     }
 }
